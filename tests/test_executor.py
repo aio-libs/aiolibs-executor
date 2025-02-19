@@ -306,9 +306,11 @@ class TestThroughput(BaseTestCase):
         async def f() -> None:
             pass
 
-        async with asyncio.timeout(0.5):
-            tasks = [await executor.submit(f()) for _ in range(task_count)]
-            await asyncio.gather(*tasks)
+        start_time = asyncio.get_running_loop().time()
+        tasks = [await executor.submit(f()) for _ in range(task_count)]
+        await asyncio.gather(*tasks)
+        end_time = asyncio.get_running_loop().time()
+        self.assertGreater(task_count / (end_time - start_time), 128)
 
     async def test_throughput(self) -> None:
         executor = self.make_executor(1, max_throughput=1)
