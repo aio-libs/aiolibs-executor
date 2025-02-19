@@ -6,6 +6,7 @@ from contextvars import ContextVar, copy_context
 from typing import Any
 
 from aiolibs_executor import Executor
+from aiolibs_executor._executor import _RateLimiter
 
 
 class BaseTestCase(unittest.IsolatedAsyncioTestCase):
@@ -586,6 +587,18 @@ class TestTaskNames(BaseTestCase):
 
         ret = await (await executor.submit(f()))
         self.assertRegex(ret, rf"custom_(\d+)\[{f.__qualname__}\]")
+
+
+class TestRateLimiter(BaseTestCase):
+    async def test_invalid_input(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "max_throughput must be non-negative number"
+        ):
+            _RateLimiter(asyncio.get_event_loop(), -1)
+        with self.assertRaisesRegex(
+            ValueError, "time_window must be positive number"
+        ):
+            _RateLimiter(asyncio.get_event_loop(), 1, 0)
 
 
 if __name__ == "__main__":

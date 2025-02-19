@@ -322,11 +322,10 @@ class Executor:
                 # test suite doesn't cover this case
                 if self._loop is None:  # pragma: no branch
                     self._loop = loop
-                if self._rate_limiter is None:
-                    self._rate_limiter = _RateLimiter(
-                        loop,
-                        self._max_throughput,
-                    )
+                self._rate_limiter = _RateLimiter(
+                    loop,
+                    self._max_throughput,
+                )
             for i in range(self._num_workers):
                 task_name = self._task_name_prefix + f"_{i}"
                 self._tasks.append(
