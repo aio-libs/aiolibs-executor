@@ -1,10 +1,12 @@
 import asyncio
 import unittest
+import warnings
 from collections.abc import AsyncIterator
 from contextvars import ContextVar, copy_context
 from typing import Any
 
 from aiolibs_executor import Executor
+from aiolibs_executor._executor import _RateLimiter
 
 
 class BaseTestCase(unittest.IsolatedAsyncioTestCase):
@@ -13,11 +15,13 @@ class BaseTestCase(unittest.IsolatedAsyncioTestCase):
         num_workers: int = 0,
         *,
         max_pending: int = 0,
+        max_throughput: int = 0,
         task_name_prefix: str = "",
     ) -> Executor:
         executor = Executor(
             num_workers=num_workers,
             max_pending=max_pending,
+            max_throughput=max_throughput,
             task_name_prefix=task_name_prefix,
         )
         self.addAsyncCleanup(executor.shutdown)
@@ -229,11 +233,17 @@ class TestInit(BaseTestCase):
         ):
             self.make_executor(max_pending=-1)
 
+    def test_invalid_max_throughput(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "max_throughput must be non-negative number"
+        ):
+            self.make_executor(max_throughput=-1)
+
     async def test_double_lazy_init(self) -> None:
         executor = self.make_executor()
-        loop = executor._lazy_init()
+        loop = executor._lazy_init()[0]
         self.assertIs(loop, asyncio.get_running_loop())
-        loop = executor._lazy_init()
+        loop = executor._lazy_init()[0]
         self.assertIs(loop, asyncio.get_running_loop())
 
     async def test_lazy_init_after_shutdown(self) -> None:
@@ -249,7 +259,7 @@ class TestInit(BaseTestCase):
         executor._lazy_init()
 
         def f() -> asyncio.AbstractEventLoop:
-            return executor._lazy_init()
+            return executor._lazy_init()[0]
 
         self.assertEqual(
             await asyncio.to_thread(f), asyncio.get_running_loop()
@@ -279,6 +289,74 @@ class TestInit(BaseTestCase):
             RuntimeError, "is bound to a different event loop"
         ):
             await asyncio.to_thread(f)
+
+    async def test_incomplete_initialization(self) -> None:
+        executor = self.make_executor()
+        executor._lazy_init()
+        executor._rate_limiter = None
+        with self.assertRaisesRegex(RuntimeError, "fully initialize"):
+            executor._lazy_init()
+
+
+class TestThroughput(BaseTestCase):
+    async def test_no_throughput_limit(self) -> None:
+        task_count = 512
+
+        executor = self.make_executor(num_workers=128)
+
+        async def f() -> None:
+            pass
+
+        start_time = asyncio.get_running_loop().time()
+        tasks = [await executor.submit(f()) for _ in range(task_count)]
+        await asyncio.gather(*tasks)
+        end_time = asyncio.get_running_loop().time()
+        self.assertGreater(task_count / (end_time - start_time), 128)
+
+    async def test_throughput(self) -> None:
+        executor = self.make_executor(1, max_throughput=1)
+
+        async def f() -> None:
+            pass
+
+        task = await executor.submit(f())
+        await task
+
+        with warnings.catch_warnings():
+            with self.assertRaises(asyncio.TimeoutError):
+                async with asyncio.timeout(0.01):
+                    task = await executor.submit(f())
+                    await task
+
+    async def test_fast_tasks_throttling(self) -> None:
+        executor = self.make_executor(128, max_throughput=2)
+
+        async def f(_: int) -> None:
+            pass
+
+        start_time = asyncio.get_running_loop().time()
+        async for _ in executor.map(f, range(3)):
+            pass
+        end_time = asyncio.get_running_loop().time()
+        throughput = 3 / (end_time - start_time)
+        self.assertGreaterEqual(throughput, 2)
+        self.assertLess(throughput, 3)
+
+    async def test_slow_tasks_throttling(self) -> None:
+        executor = self.make_executor(2, max_throughput=128)
+
+        async def f(_: int) -> None:
+            await asyncio.sleep(0.1)
+
+        start_time = asyncio.get_running_loop().time()
+        async for _ in executor.map(f, range(10)):
+            pass
+        end_time = asyncio.get_running_loop().time()
+        throughput = 10 / (end_time - start_time)
+        # Almost 20 tasks should complete per second (2 workers, 0.1 sec per
+        # task)
+        self.assertGreater(throughput, 18)
+        self.assertLess(throughput, 20)
 
 
 class TestShutdown(BaseTestCase):
@@ -509,6 +587,18 @@ class TestTaskNames(BaseTestCase):
 
         ret = await (await executor.submit(f()))
         self.assertRegex(ret, rf"custom_(\d+)\[{f.__qualname__}\]")
+
+
+class TestRateLimiter(BaseTestCase):
+    async def test_invalid_input(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError, "max_throughput must be non-negative number"
+        ):
+            _RateLimiter(asyncio.get_event_loop(), -1)
+        with self.assertRaisesRegex(
+            ValueError, "time_window must be positive number"
+        ):
+            _RateLimiter(asyncio.get_event_loop(), 1, 0)
 
 
 if __name__ == "__main__":
