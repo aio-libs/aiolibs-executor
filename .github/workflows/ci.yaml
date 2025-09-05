@@ -18,7 +18,7 @@ jobs:
     - name: Checkout commit
       uses: actions/checkout@v4
     - name: Install Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: '3.13'
     - name: Install pipx
@@ -51,7 +51,7 @@ jobs:
     - name: Checkout commit
       uses: actions/checkout@v4
     - name: Install Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.pyver }}
     - name: Install pipx
@@ -140,7 +140,7 @@ jobs:
       with:
         submodules: true
     - name: Install Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: '3.13'
     - name: Install pipx
