@@ -5,7 +5,7 @@ authors = [
     {name = "Andrew Svetlov",email = "andrew.svetlov@gmail.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
 ]
 dynamic = ["version"]
@@ -20,12 +20,13 @@ enable = true
 
 [tool.poetry]
 version = "0.0.0"
+
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.15.0"
 coverage = "^7.6.11"
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py311"
 line-length = 79
 
 [tool.ruff.lint]
