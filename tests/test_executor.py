@@ -339,7 +339,6 @@ class TestShutdown(BaseTestCase):
 
         # emulate unhandled error by putting bad data into the queue
         await executor._work_items.put(None)  # type: ignore[arg-type]
-
         ok = False
         try:
             await executor.shutdown()
